@@ -15,10 +15,10 @@ services:
     envVars:
       - key: PORT
         value: "10000"
-      # Exact origin of the GitHub Pages frontend allowed to call this API (scheme + host, no path).
-      # Change it if the frontend is published somewhere else.
+      # Exact origins allowed to call this API from the GitHub Pages and Cloudflare Pages frontends.
+      # List scheme + host only (no path); update this when publishing the frontend elsewhere.
       - key: CORS_ORIGINS
-        value: https://v4x1.github.io
+        value: https://v4x1.github.io,https://vaxdownloader.pages.dev
       # Requests reach the app through Render's proxy. Trusting exactly one hop keys rate limits
       # per visitor without letting clients spoof their address through X-Forwarded-For.
       - key: TRUST_PROXY

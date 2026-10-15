@@ -84,27 +84,24 @@ Open <http://localhost:3000>.
 
 The app has two parts:
 
-- **The page** (`public/`) is static HTML, CSS, and JavaScript. GitHub Pages can host it.
-- **The server** (`server.js` with yt-dlp and FFmpeg) does the analysis and downloads. GitHub Pages **cannot** run it. A page on GitHub Pages shows *"We couldn't reach the VAX download server…"* until it is connected to a running server.
+- **The page** (`public/`) is static HTML, CSS, and JavaScript. GitHub Pages or Cloudflare Pages can host it.
+- **The server** (`server.js` with yt-dlp and FFmpeg) does the analysis and downloads. Static hosts cannot run it. The GitHub Pages workflow and the `vaxdownloader.pages.dev` Cloudflare Pages hostname connect to the Render service declared in `render.yaml` by default; that service still needs to be deployed and running or the page shows *"We couldn't reach the VAX download server…"*.
 
 ### 1. Deploy the server (Render, free plan)
 
 [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/v4x1/VAX-Downloader)
 
-`render.yaml` builds the `Dockerfile` on Render's free plan in Frankfurt and sets `CORS_ORIGINS=https://v4x1.github.io`. When the deploy finishes, open `https://<service>.onrender.com/api/health`; it should return `{"ok":true}`. The server's own address also serves the complete app, so it works without GitHub Pages too.
+`render.yaml` builds the `Dockerfile` on Render's free plan in Frankfurt and allows the exact GitHub Pages and Cloudflare Pages origins. When the deploy finishes, open `https://<service>.onrender.com/api/health`; it should return `{"ok":true}`. The server's own address also serves the complete app, so it works without a separate static host too.
 
 Free instances sleep after 15 idle minutes. The first request after that waits about a minute while the server starts; the page sends a wake-up request as soon as it loads.
 
 Any Docker host works the same way (see [Docker](#docker)). Set `CORS_ORIGINS` to the page's exact origin (scheme and host, no path), and set `TRUST_PROXY` when the server runs behind a reverse proxy.
 
-### 2. Connect the GitHub Pages site to the server
+### 2. Connect the static frontend to the server
 
-Use the server's address without an `/api` suffix, in either place:
+The GitHub Pages workflow defaults to `https://vax-downloader.onrender.com`, matching the service name in `render.yaml`. The `vaxdownloader.pages.dev` Cloudflare Pages hostname is also mapped to that API in `public/config.js`. Deploy the Render service first. If you renamed it or use another host, set **Settings → Secrets and variables → Actions → Variables** → `VAX_API_BASE` for GitHub Pages, or update `public/config.js` for Cloudflare Pages.
 
-- **Settings → Secrets and variables → Actions → Variables**: add `VAX_API_BASE` = `https://<service>.onrender.com`, or
-- `window.VAX_API_BASE` in `public/config.js`, committed to `main`.
-
-The repository variable takes precedence over `public/config.js`.
+The Render `CORS_ORIGINS` setting must include the exact static site origin (scheme + hostname, no path). The supplied Blueprint allows both `https://v4x1.github.io` and `https://vaxdownloader.pages.dev`. If you use a different domain, add it there too. Leave `window.VAX_API_BASE` empty when the Node server itself serves the page, so the API remains same-origin.
 
 ### 3. Publish the page with GitHub Actions
 
