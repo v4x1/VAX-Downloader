@@ -9,6 +9,7 @@ VAX Downloader is a lightweight, bilingual (English / Arabic) media-link analyze
 ├── Dockerfile
 ├── .dockerignore
 ├── .env.example
+├── render.yaml               # Render Blueprint: one-click free deployment of the server
 ├── package.json
 ├── server.js                 # Express app, API routes, rate limits, streaming responses
 ├── lib/
@@ -16,6 +17,7 @@ VAX Downloader is a lightweight, bilingual (English / Arabic) media-link analyze
 │   └── security.js           # URL validation, DNS/IP checks, pinned outbound proxy
 ├── public/
 │   ├── index.html            # Accessible app shell
+│   ├── config.js             # API server address when the page is hosted separately (GitHub Pages)
 │   ├── theme-init.js         # Applies saved/system theme and direction before first paint
 │   ├── styles.css            # Responsive themes, RTL, glass UI, motion
 │   └── app.js                # i18n, theme, analysis and streamed-download interactions
@@ -27,8 +29,8 @@ VAX Downloader is a lightweight, bilingual (English / Arabic) media-link analyze
 ## Requirements
 
 - Node.js 20 or later
-- Python 3 (for the yt-dlp Python package)
-- `yt-dlp`
+- Python 3.10 or later (for the yt-dlp Python package)
+- `yt-dlp` with its `default` and `deno` extras: YouTube requires the EJS challenge scripts and the Deno JavaScript runtime ([details](https://github.com/yt-dlp/yt-dlp/wiki/EJS))
 - FFmpeg (including `ffprobe`)
 
 ### Local setup
@@ -37,10 +39,10 @@ VAX Downloader is a lightweight, bilingual (English / Arabic) media-link analyze
 # Install the Node dependencies
 npm install
 
-# Install yt-dlp in a virtual environment
+# Install yt-dlp, its YouTube challenge scripts, and Deno in a virtual environment
 python3 -m venv .venv
 . .venv/bin/activate
-python -m pip install --upgrade yt-dlp
+python -m pip install --upgrade "yt-dlp[default,deno]"
 
 # Install FFmpeg with your OS package manager, then confirm both tools are available
 ffmpeg -version
@@ -78,17 +80,41 @@ docker run --rm -p 3000:3000 --env-file .env vax-downloader
 
 Open <http://localhost:3000>.
 
-## GitHub Pages (static frontend)
+## Deploying online
 
-GitHub Pages can host the interface, but it cannot run the Node API, yt-dlp, or FFmpeg. Downloads and analysis therefore require the backend to be deployed separately (for example, using the supplied Dockerfile on a container host).
+The app has two parts:
 
-A Pages workflow is included at `.github/workflows/pages.yml`. It publishes `public/` when pushed to `main`. Before enabling Pages, deploy the API and configure:
+- **The page** (`public/`) is static HTML, CSS, and JavaScript. GitHub Pages can host it.
+- **The server** (`server.js` with yt-dlp and FFmpeg) does the analysis and downloads. GitHub Pages **cannot** run it. A page on GitHub Pages shows *"We couldn't reach the VAX download server…"* until it is connected to a running server.
 
-1. In the repository **Settings → Secrets and variables → Actions → Variables**, add `VAX_API_BASE` with the API origin, e.g. `https://api.example.com` (no `/api` suffix).
-2. On the API host, set `CORS_ORIGINS=https://<owner>.github.io` and redeploy. Use the exact origin shown in the browser; do not include the project path.
-3. In **Settings → Pages**, set the source to **GitHub Actions**.
+### 1. Deploy the server (Render, free plan)
 
-For a same-origin deployment, leave `VAX_API_BASE` unset. Never enable wildcard CORS for this API. GitHub Pages alone can show the UI but cannot provide working analysis/download endpoints.
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/v4x1/VAX-Downloader)
+
+`render.yaml` builds the `Dockerfile` on Render's free plan in Frankfurt and sets `CORS_ORIGINS=https://v4x1.github.io`. When the deploy finishes, open `https://<service>.onrender.com/api/health`; it should return `{"ok":true}`. The server's own address also serves the complete app, so it works without GitHub Pages too.
+
+Free instances sleep after 15 idle minutes. The first request after that waits about a minute while the server starts; the page sends a wake-up request as soon as it loads.
+
+Any Docker host works the same way (see [Docker](#docker)). Set `CORS_ORIGINS` to the page's exact origin (scheme and host, no path), and set `TRUST_PROXY` when the server runs behind a reverse proxy.
+
+### 2. Connect the GitHub Pages site to the server
+
+Use the server's address without an `/api` suffix, in either place:
+
+- **Settings → Secrets and variables → Actions → Variables**: add `VAX_API_BASE` = `https://<service>.onrender.com`, or
+- `window.VAX_API_BASE` in `public/config.js`, committed to `main`.
+
+The repository variable takes precedence over `public/config.js`.
+
+### 3. Publish the page with GitHub Actions
+
+In **Settings → Pages → Build and deployment**, set **Source** to **GitHub Actions**. `.github/workflows/pages.yml` then publishes `public/` at the site root (`https://v4x1.github.io/VAX-Downloader/`) on every push to `main`, and the old `/public/` address redirects there. With **Deploy from a branch** instead, GitHub shows this README at the root and an unconfigured copy of the app under `/public/`.
+
+Never enable wildcard CORS for this API.
+
+### YouTube on cloud servers
+
+YouTube often answers requests from data-center IP addresses, including free hosting plans, with a "confirm you're not a bot" check. The page then reports that the source site is blocking the server. Other sites are usually unaffected. A server on a home (residential) connection is the most reliable option for YouTube.
 
 ## API
 
@@ -132,7 +158,7 @@ Query parameters: `url`, `type=video|audio`, `format`, and `quality` (video heig
 
 - Only `http` and `https` source URLs on public hosts and standard web ports are accepted. Credentials, private/loopback/link-local IPs, localhost names, and special-use address ranges are rejected.
 - yt-dlp and FFmpeg traffic is routed through a loopback-only outbound proxy. The proxy validates and pins resolved public IP addresses for each HTTP request and HTTPS tunnel, including redirects and media segments.
-- yt-dlp runs without user/system config, cookies, or authentication options. There are request-size limits, per-route rate limits, child-process timeouts, a concurrent-download cap, and a configurable file-size cap.
+- yt-dlp runs without user/system config, cookies, or authentication options. YouTube's JavaScript challenges are solved by Deno, which yt-dlp runs without file system or network access. There are request-size limits, per-route rate limits, child-process timeouts, a concurrent-download cap, and a configurable file-size cap.
 - Use HTTPS and a trusted reverse proxy in production. Set `TRUST_PROXY` only when the service is actually behind the configured proxy. The included in-memory rate limiter is per process; use a shared rate-limit store when horizontally scaling.
 - Keep yt-dlp and FFmpeg updated. For sensitive deployments, add infrastructure-level outbound firewall rules as defense in depth and monitor temp-disk usage.
 - Respect each source site's terms and copyright law. Private, paywalled, and DRM-protected content is not supported.
