@@ -78,6 +78,18 @@ docker run --rm -p 3000:3000 --env-file .env vax-downloader
 
 Open <http://localhost:3000>.
 
+## GitHub Pages (static frontend)
+
+GitHub Pages can host the interface, but it cannot run the Node API, yt-dlp, or FFmpeg. Downloads and analysis therefore require the backend to be deployed separately (for example, using the supplied Dockerfile on a container host).
+
+A Pages workflow is included at `.github/workflows/pages.yml`. It publishes `public/` when pushed to `main`. Before enabling Pages, deploy the API and configure:
+
+1. In the repository **Settings → Secrets and variables → Actions → Variables**, add `VAX_API_BASE` with the API origin, e.g. `https://api.example.com` (no `/api` suffix).
+2. On the API host, set `CORS_ORIGINS=https://<owner>.github.io` and redeploy. Use the exact origin shown in the browser; do not include the project path.
+3. In **Settings → Pages**, set the source to **GitHub Actions**.
+
+For a same-origin deployment, leave `VAX_API_BASE` unset. Never enable wildcard CORS for this API. GitHub Pages alone can show the UI but cannot provide working analysis/download endpoints.
+
 ## API
 
 ### `POST /api/analyze`

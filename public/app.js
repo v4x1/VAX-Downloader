@@ -358,11 +358,17 @@ function setAnalyzing(isLoading) {
   }
 }
 
+function apiUrl(path) {
+  const configuredBase = window.VAX_API_BASE || '';
+  const base = configuredBase ? configuredBase.replace(/\/+$/, '') : window.location.origin;
+  return `${base}/api/${path.replace(/^\/+/, '')}`;
+}
+
 async function analyzeLink(url) {
   const controller = new AbortController();
   const timeout = window.setTimeout(() => controller.abort(), 60_000);
   try {
-    const response = await fetch('/api/analyze', {
+    const response = await fetch(apiUrl('analyze'), {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'accept': 'application/json' },
       body: JSON.stringify({ url }),
@@ -424,7 +430,7 @@ function normalizeClientMedia(media) {
     uploader: typeof media.uploader === 'string' ? media.uploader : t('unknownCreator'),
     duration: media.duration !== null && media.duration !== undefined && Number.isFinite(Number(media.duration)) ? Number(media.duration) : null,
     thumbnail: typeof media.thumbnail === 'string' && media.thumbnail.startsWith('https://')
-      ? `/api/thumbnail?url=${encodeURIComponent(media.thumbnail)}`
+      ? `${apiUrl('thumbnail')}?url=${encodeURIComponent(media.thumbnail)}`
       : null,
     platformKey: knownPlatforms.has(media.platformKey) ? media.platformKey : 'other',
     platformName: typeof media.platformName === 'string' ? media.platformName.slice(0, 48) : '',
@@ -805,7 +811,7 @@ async function startDownload(button, id, type, option) {
     // Request a user-selected save location before starting network work when supported.
     const saveTarget = await chooseSaveTarget(filename, extension);
     setDownloadState(id, { state: 'preparing', progress: 0, indeterminate: true });
-    const url = new URL('/api/download', window.location.origin);
+    const url = new URL(apiUrl('download'));
     url.searchParams.set('url', requestedUrl);
     url.searchParams.set('type', type);
     url.searchParams.set('format', extension);

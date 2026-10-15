@@ -70,6 +70,19 @@ app.use(helmet({
     ? { maxAge: 31_536_000, includeSubDomains: true }
     : false,
 }));
+// Optional exact-origin CORS allowlist for a separately hosted static frontend.
+// Example: CORS_ORIGINS=https://owner.github.io
+const corsOrigins = new Set((process.env.CORS_ORIGINS || '').split(',').map((origin) => origin.trim()).filter(Boolean));
+app.use('/api', (request, response, next) => {
+  const origin = request.get('origin');
+  if (!origin || !corsOrigins.has(origin)) return next();
+  response.setHeader('Access-Control-Allow-Origin', origin);
+  response.setHeader('Vary', 'Origin');
+  response.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  response.setHeader('Access-Control-Allow-Headers', 'Content-Type, Accept');
+  if (request.method === 'OPTIONS') return response.sendStatus(204);
+  next();
+});
 app.use(express.json({ limit: '8kb', strict: true }));
 
 function configuredLimiter(envName, fallback) {
