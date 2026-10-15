@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en" dir="ltr" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#10111b">
+  <meta name="description" content="Analyze a media link and choose an available video or audio download in seconds.">
+  <script src="/theme-init.js"></script>
+  <title>VAX Downloader — Media, made simple</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css">
+  <script defer src="/app.js"></script>
+</head>
+<body>
+  <div class="ambient" aria-hidden="true">
+    <span class="orb orb--violet" data-glow="rgba(139, 92, 246, .24)"></span>
+    <span class="orb orb--cyan" data-glow="rgba(45, 212, 191, .19)"></span>
+    <span class="orb orb--rose" data-glow="rgba(244, 114, 182, .17)"></span>
+    <span class="orb orb--blue" data-glow="rgba(96, 165, 250, .18)"></span>
+    <span class="orb orb--lime" data-glow="rgba(163, 230, 53, .12)"></span>
+  </div>
+
+  <div class="page-shell">
+    <a class="skip-link" href="#main-content" data-i18n="skipToContent">Skip to content</a>
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="VAX Downloader home" data-i18n-aria="brandHome">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 40 40" fill="none">
+            <path d="M5.8 9.6h7.4l6.9 16.1L27 9.6h7.2L23.1 31.2h-6.2L5.8 9.6Z" fill="currentColor"/>
+            <path d="M27 27.2h7.2v4H25.9l1.1-4Z" fill="#76E6DD"/>
+          </svg>
+        </span>
+        <span class="brand-wordmark">VAX <span>Downloader</span></span>
+      </a>
+
+      <div class="topbar-tools">
+        <button class="theme-switch ios-switch" id="theme-toggle" type="button" role="switch" aria-checked="true" aria-label="Switch to light mode" data-i18n-aria="themeToggleDark">
+          <span class="theme-icon theme-icon--sun" aria-hidden="true">
+            <svg viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="3.3"/><path d="M10 1.8v2M10 16.2v2M18.2 10h-2M3.8 10h-2m14-5.8-1.4 1.4M5.6 14.4l-1.4 1.4m11.6 0-1.4-1.4M5.6 5.6 4.2 4.2"/></svg>
+          </span>
+          <span class="theme-icon theme-icon--moon" aria-hidden="true">
+            <svg viewBox="0 0 20 20" fill="none"><path d="M16.6 12.7A7.4 7.4 0 0 1 7.3 3.4 7.5 7.5 0 1 0 16.6 12.7Z"/><path d="M14.7 3.3v3.1m-1.5-1.55h3.1"/></svg>
+          </span>
+          <span class="ios-knob" aria-hidden="true"></span>
+        </button>
+        <div class="language-switch" role="group" aria-label="Choose language" data-i18n-aria="languageLabel">
+          <button class="language-option is-active" type="button" data-language="en" aria-pressed="true">EN</button>
+          <button class="language-option" type="button" data-language="ar" aria-pressed="false">AR</button>
+        </div>
+      </div>
+    </header>
+
+    <main id="main-content">
+      <section class="hero" aria-labelledby="hero-title">
+        <div class="hero-copy">
+          <h1 id="hero-title"><span data-i18n="headlineLineOne">Your media,</span><br><span class="headline-gradient" data-i18n="headlineLineTwo">one tap away.</span></h1>
+          <p class="hero-description" data-i18n="heroDescription">Paste a link to explore the formats and qualities actually available. Simple, quick, and made for you.</p>
+        </div>
+
+        <form class="analyzer-card glass-card" id="analyze-form" novalidate>
+          <label class="visually-hidden" for="media-url" data-i18n="linkLabel">Media link</label>
+          <div class="analyzer-row">
+            <div class="url-field" id="url-field">
+              <span class="link-icon" aria-hidden="true">
+                <svg viewBox="0 0 22 22" fill="none"><path d="m9.1 12.9 3.8-3.8m-6.1 6.1-1 .9a3.2 3.2 0 0 1-4.5-4.5l4.1-4.1a3.2 3.2 0 0 1 4.5 0m3-2.4 1-.9a3.2 3.2 0 0 1 4.5 4.5l-4.1 4.1a3.2 3.2 0 0 1-4.5 0" stroke="currentColor" stroke-width="1.65" stroke-linecap="round"/></svg>
+              </span>
+              <input id="media-url" name="url" type="url" inputmode="url" autocomplete="url" autocapitalize="off" spellcheck="false" placeholder="Paste a YouTube, TikTok, Instagram link…"  data-i18n-placeholder="urlPlaceholder">
+              <button class="paste-button" id="paste-button" type="button" aria-label="Paste from clipboard" data-i18n-aria="pasteLabel">
+                <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><rect x="5.2" y="3.8" width="9.6" height="13" rx="1.8"/><path d="M7.5 3.8V2.9c0-.5.4-.9.9-.9h3.2c.5 0 .9.4.9.9v.9"/><path d="M8 8h4m-4 3h4m-4 3h2"/></svg>
+                <span data-i18n="paste">Paste</span>
+              </button>
+            </div>
+            <button class="analyze-button primary-button" id="analyze-button" type="submit">
+              <span class="button-spinner" aria-hidden="true"></span>
+              <span class="analyze-label" data-i18n="analyze">Analyze link</span>
+              <svg class="button-arrow" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M4 10h11m-4.5-4.5L15 10l-4.5 4.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+          </div>
+          <p class="inline-message" id="form-message" role="alert" hidden></p>
+        </form>
+
+        <div class="trust-points" aria-label="Product highlights" data-i18n-aria="highlightsLabel">
+          <span class="trust-point"><span aria-hidden="true">✳</span><span data-i18n="highlightFormats">Only real available formats</span></span>
+          <span class="trust-divider" aria-hidden="true"></span>
+          <span class="trust-point"><span aria-hidden="true">⌁</span><span data-i18n="highlightPrivate">Private by design</span></span>
+          <span class="trust-divider" aria-hidden="true"></span>
+          <span class="trust-point"><span aria-hidden="true">↗</span><span data-i18n="highlightFast">Fast, simple downloads</span></span>
+        </div>
+      </section>
+
+      <section class="results-shell" id="results-shell" aria-live="polite" aria-busy="false" hidden>
+        <div class="skeleton-card glass-card" id="skeleton-card" aria-hidden="true" hidden>
+          <div class="skeleton-summary">
+            <div class="skeleton-thumbnail shimmer"></div>
+            <div class="skeleton-meta">
+              <div class="skeleton-line skeleton-short shimmer"></div>
+              <div class="skeleton-line skeleton-title shimmer"></div>
+              <div class="skeleton-line skeleton-medium shimmer"></div>
+            </div>
+          </div>
+          <div class="skeleton-selector shimmer"></div>
+          <div class="skeleton-download-row shimmer"></div>
+          <div class="skeleton-download-row shimmer"></div>
+          <div class="skeleton-download-row shimmer"></div>
+        </div>
+        <div id="result-container"></div>
+      </section>
+
+      <div class="sr-status" id="screen-reader-status" role="status" aria-live="polite" aria-atomic="true"></div>
+    </main>
+
+    <footer class="site-footer"><p data-i18n="footer">© All rights reserved — VAX Creations</p></footer>
+  </div>
+</body>
+</html>
