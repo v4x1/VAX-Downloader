@@ -207,7 +207,14 @@ function selectionUrl(value) {
   return typeof value === 'string' ? value : '';
 }
 
+// Serve the app shell explicitly so the root URL always resolves to index.html,
+// even if static-middleware index resolution is unavailable in a given runtime.
+app.get('/', (_request, response) => {
+  response.sendFile(path.join(publicDir, 'index.html'));
+});
+
 app.use(express.static(publicDir, {
+  index: 'index.html',
   extensions: ['html'],
   fallthrough: true,
   maxAge: process.env.NODE_ENV === 'production' ? '1h' : 0,
