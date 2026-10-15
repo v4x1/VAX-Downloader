@@ -1,0 +1,28 @@
+# Render Blueprint for the VAX Downloader server (Node API + yt-dlp + FFmpeg, built from the Dockerfile).
+# One-click deploy: https://render.com/deploy?repo=https://github.com/v4x1/VAX-Downloader
+# Field reference:  https://render.com/docs/blueprint-spec
+services:
+  - type: web
+    name: vax-downloader
+    runtime: docker
+    # Free instances (0.1 CPU, 512 MB) sleep after 15 idle minutes and take about a minute to wake.
+    # Omitting the plan would select a paid instance type.
+    plan: free
+    region: frankfurt
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/health
+    autoDeployTrigger: commit
+    envVars:
+      - key: PORT
+        value: "10000"
+      # Exact origin of the GitHub Pages frontend allowed to call this API (scheme + host, no path).
+      # Change it if the frontend is published somewhere else.
+      - key: CORS_ORIGINS
+        value: https://v4x1.github.io
+      # Requests reach the app through Render's proxy. Trusting exactly one hop keys rate limits
+      # per visitor without letting clients spoof their address through X-Forwarded-For.
+      - key: TRUST_PROXY
+        value: "1"
+      # Keep the small free instance within its memory by preparing one download at a time.
+      - key: MAX_CONCURRENT_DOWNLOADS
+        value: "1"

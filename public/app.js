@@ -33,6 +33,8 @@ const translations = {
     analysisError: 'We could not analyze that link. Please check it and try again.',
     downloadError: 'The download could not be prepared. Try another available format or retry in a moment.',
     serverError: 'Something went wrong on our side. Please try again.',
+    backendUnavailable: 'We couldn’t reach the VAX download server. It may be offline, still starting up, or not connected to this page yet. Please try again in a minute.',
+    sourceBlocked: 'The source site is temporarily blocking requests from our server. Please try again later or try a link from another site.',
     clipboardUnavailable: 'Clipboard access is unavailable. You can paste the link into the field instead.',
     modeHeading: 'Choose your download',
     modeVideoDescription: 'Available video resolutions and formats',
@@ -114,6 +116,8 @@ const translations = {
     analysisError: 'تعذّر تحليل هذا الرابط. تحقق منه ثم حاول مجددًا.',
     downloadError: 'تعذّر تجهيز التنزيل. جرّب صيغة أخرى متاحة أو أعد المحاولة بعد قليل.',
     serverError: 'حدث خطأ من جانبنا. يرجى المحاولة مجددًا.',
+    backendUnavailable: 'تعذّر الوصول إلى خادم التنزيل. قد يكون متوقفًا، أو في طور التشغيل، أو غير مرتبط بهذه الصفحة بعد. يرجى المحاولة مجددًا بعد دقيقة.',
+    sourceBlocked: 'يحظر الموقع المصدر مؤقتًا الطلبات القادمة من خادمنا. يرجى المحاولة لاحقًا أو تجربة رابط من موقع آخر.',
     clipboardUnavailable: 'لا يمكن الوصول إلى الحافظة. يمكنك لصق الرابط مباشرة في الحقل.',
     modeHeading: 'اختر طريقة التنزيل',
     modeVideoDescription: 'دقات وصيغ الفيديو المتاحة',
@@ -180,6 +184,8 @@ const errorTranslationKeys = {
   download_failed: 'downloadError',
   not_found: 'analysisError',
   server_error: 'serverError',
+  backend_unavailable: 'backendUnavailable',
+  source_blocked: 'sourceBlocked',
 };
 
 const knownPlatforms = new Set(['youtube', 'tiktok', 'instagram', 'telegram', 'twitter', 'facebook', 'soundcloud', 'vimeo', 'reddit']);
@@ -318,12 +324,35 @@ function apiErrorKey(code) {
   return errorTranslationKeys[code] || 'serverError';
 }
 
+function isJsonResponse(response) {
+  return /^application\/json\b/i.test(response.headers.get('content-type') || '');
+}
+
+// Every VAX API response other than a finished file is JSON. Anything else (usually an HTML page)
+// means the request reached a static host or gateway instead of the API, for example GitHub Pages
+// with no backend connected, or a container host that is still waking the server up.
 async function parseApiError(response) {
+  if (!isJsonResponse(response)) {
+    console.warn(`[VAX] ${(response.url || 'The API').split('?')[0]} answered HTTP ${response.status} without a VAX API response. Check that the server is running and that VAX_API_BASE in config.js points to it.`);
+    return 'backend_unavailable';
+  }
   try {
     const payload = await response.json();
     return payload?.error?.code || 'server_error';
   } catch {
     return 'server_error';
+  }
+}
+
+// fetch() rejects only when no HTTP response arrived at all: the API host is offline or unknown,
+// the server's CORS_ORIGINS does not include this page, or an https page tried to call an http API.
+async function apiFetch(url, options) {
+  try {
+    return await fetch(url, options);
+  } catch (error) {
+    if (error?.name === 'AbortError') throw error;
+    console.warn(`[VAX] Could not connect to ${String(url).split('?')[0]}. Check that the server is running, that VAX_API_BASE is correct, and that CORS_ORIGINS on the server includes ${window.location.origin}.`);
+    throw new Error('backend_unavailable');
   }
 }
 
@@ -364,23 +393,35 @@ function apiUrl(path) {
   return `${base}/api/${path.replace(/^\/+/, '')}`;
 }
 
+// Long enough for a sleeping free-tier container to boot (often 30–60 s) and then finish the
+// server's own analysis, which is capped at 45 s by default.
+const ANALYZE_TIMEOUT_MS = 100_000;
+
 async function analyzeLink(url) {
   const controller = new AbortController();
-  const timeout = window.setTimeout(() => controller.abort(), 60_000);
+  const timeout = window.setTimeout(() => controller.abort(), ANALYZE_TIMEOUT_MS);
   try {
-    const response = await fetch(apiUrl('analyze'), {
+    const response = await apiFetch(apiUrl('analyze'), {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'accept': 'application/json' },
       body: JSON.stringify({ url }),
       signal: controller.signal,
     });
-    if (!response.ok) throw new Error(await parseApiError(response));
-    const payload = await response.json();
+    if (!response.ok || !isJsonResponse(response)) throw new Error(await parseApiError(response));
+    const payload = await response.json().catch(() => null);
     if (!payload?.ok || !payload.media) throw new Error('analysis_failed');
     return payload.media;
   } finally {
     window.clearTimeout(timeout);
   }
+}
+
+// Free container hosts often put an idle server to sleep. When this page is hosted separately,
+// pinging the health endpoint on load starts waking the server while the visitor pastes a link;
+// failures surface on the real request. Same-origin pages were just sent by an awake server.
+function warmUpApi() {
+  if (!window.VAX_API_BASE) return;
+  fetch(apiUrl('health'), { cache: 'no-store' }).catch(() => {});
 }
 
 form.addEventListener('submit', async (event) => {
@@ -409,7 +450,8 @@ form.addEventListener('submit', async (event) => {
   } catch (error) {
     resultContainer.replaceChildren();
     resultsShell.hidden = true;
-    const code = error.name === 'AbortError' ? 'network_error' : (error.message || 'server_error');
+    // The server enforces its own shorter analysis limit, so a client-side timeout means no answer came back.
+    const code = error.name === 'AbortError' ? 'backend_unavailable' : (error.message || 'server_error');
     showFormMessage(apiErrorKey(code));
     announce(t(apiErrorKey(code)));
   } finally {
@@ -547,6 +589,9 @@ function buildResultCard(media) {
     image.src = media.thumbnail;
     image.alt = '';
     image.loading = 'lazy';
+    // CORS mode lets a separately hosted page (e.g. GitHub Pages) load thumbnails from an API in
+    // CORS_ORIGINS; helmet's same-origin resource policy only blocks no-cors image requests.
+    image.crossOrigin = 'anonymous';
     image.referrerPolicy = 'no-referrer';
     image.addEventListener('error', () => image.remove(), { once: true });
     thumbnail.append(image);
@@ -817,8 +862,11 @@ async function startDownload(button, id, type, option) {
     url.searchParams.set('format', extension);
     url.searchParams.set('quality', String(type === 'video' ? option.height : (option.quality ?? (option.format === 'mp3' ? option.bitrate : ''))));
     timeout = window.setTimeout(() => controller.abort(), 15 * 60 * 1000);
-    const response = await fetch(url, { method: 'GET', headers: { accept: 'application/octet-stream, application/json' }, signal: controller.signal });
-    if (!response.ok) throw new Error(await parseApiError(response));
+    const response = await apiFetch(url, { method: 'GET', headers: { accept: 'application/octet-stream, application/json' }, signal: controller.signal });
+    // A successful HTML page is a static host's fallback page, never a prepared media file.
+    if (!response.ok || /^text\/html\b/i.test(response.headers.get('content-type') || '')) {
+      throw new Error(await parseApiError(response));
+    }
 
     setDownloadState(id, { state: 'downloading', progress: 0, indeterminate: !response.headers.get('content-length') });
     await readResponse(response, saveTarget, filename, mimeByFormat[extension] || 'application/octet-stream', id, type, option, controller.signal);
@@ -951,3 +999,4 @@ function initAmbientEffects() {
 initPreferences();
 initLanguageSwitch();
 initAmbientEffects();
+warmUpApi();

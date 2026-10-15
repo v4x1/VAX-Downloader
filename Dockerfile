@@ -6,10 +6,13 @@ ENV NODE_ENV=production \
     YTDLP_BIN=/opt/yt-dlp-venv/bin/yt-dlp \
     PORT=3000
 
+# yt-dlp needs its EJS challenge scripts (the "default" extra) and a JavaScript runtime to read
+# YouTube formats. The "deno" extra installs Deno, which yt-dlp enables by default and runs
+# sandboxed without file system or network access. https://github.com/yt-dlp/yt-dlp/wiki/EJS
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates ffmpeg python3 python3-venv \
     && python3 -m venv /opt/yt-dlp-venv \
-    && /opt/yt-dlp-venv/bin/pip install --no-cache-dir --upgrade pip yt-dlp \
+    && /opt/yt-dlp-venv/bin/pip install --no-cache-dir --upgrade pip "yt-dlp[default,deno]" \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 

@@ -4,6 +4,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
   availableSelection,
+  classifyExtractorError,
   contentDisposition,
   createPublicMetadata,
   isValidSelection,
@@ -76,4 +77,22 @@ test('creates a safe Unicode filename and RFC 5987 content disposition', () => {
   const header = contentDisposition(filename);
   assert.match(header, /^attachment; filename=".*"; filename\*=UTF-8''/);
   assert.equal(/[\r\n]/.test(header), false);
+});
+
+test('reports anti-bot and rate-limit blocks separately from genuinely private media', () => {
+  // Messages as relayed by yt-dlp; YouTube uses a typographic apostrophe in "you’re".
+  const blocked = [
+    'ERROR: [youtube] WR71hImg7yI: Sign in to confirm you\u2019re not a bot. Use --cookies-from-browser or --cookies for the authentication.',
+    "ERROR: [youtube] WR71hImg7yI: Sign in to confirm you're not a bot.",
+    'ERROR: [youtube] abc: Video unavailable. YouTube is requiring a captcha challenge before playback',
+    "ERROR: [youtube] abc: This content isn't available, try again later. The current session has been rate-limited by YouTube for up to an hour.",
+    'ERROR: [instagram] abc: Unable to download webpage: HTTP Error 429: Too Many Requests',
+  ];
+  for (const message of blocked) assert.equal(classifyExtractorError(message), 'source_blocked', message);
+
+  assert.equal(classifyExtractorError('ERROR: [youtube] abc: Private video. Sign in if you\u2019ve been granted access to this video'), 'private_content');
+  assert.equal(classifyExtractorError('ERROR: [youtube] abc: Sign in to confirm your age. This video may be inappropriate for some users.'), 'private_content');
+  assert.equal(classifyExtractorError('ERROR: [youtube] abc: Video unavailable. This video has been removed by the uploader'), 'unavailable_content');
+  assert.equal(classifyExtractorError('ERROR: Unsupported URL: https://example.com/page'), 'unsupported_site');
+  assert.equal(classifyExtractorError('ERROR: Unable to download webpage: <urlopen error timed out>'), 'network_error');
 });
