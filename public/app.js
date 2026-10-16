@@ -33,7 +33,7 @@ const translations = {
     analysisError: 'We could not analyze that link. Please check it and try again.',
     downloadError: 'The download could not be prepared. Try another available format or retry in a moment.',
     serverError: 'Something went wrong on our side. Please try again.',
-    backendUnavailable: 'We couldn’t reach the VAX download server. It may be offline, still starting up, or not connected to this page yet. Please try again in a minute.',
+    backendUnavailable: 'The download server is unreachable. This page cannot analyze links without a running API. The site owner needs to deploy the server and connect this page to its URL; if it is sleeping, try again in a minute.',
     sourceBlocked: 'The source site is temporarily blocking requests from our server. Please try again later or try a link from another site.',
     clipboardUnavailable: 'Clipboard access is unavailable. You can paste the link into the field instead.',
     modeHeading: 'Choose your download',
@@ -116,7 +116,7 @@ const translations = {
     analysisError: 'تعذّر تحليل هذا الرابط. تحقق منه ثم حاول مجددًا.',
     downloadError: 'تعذّر تجهيز التنزيل. جرّب صيغة أخرى متاحة أو أعد المحاولة بعد قليل.',
     serverError: 'حدث خطأ من جانبنا. يرجى المحاولة مجددًا.',
-    backendUnavailable: 'تعذّر الوصول إلى خادم التنزيل. قد يكون متوقفًا، أو في طور التشغيل، أو غير مرتبط بهذه الصفحة بعد. يرجى المحاولة مجددًا بعد دقيقة.',
+    backendUnavailable: 'تعذّر الوصول إلى خادم التنزيل. لا يمكن تحليل الروابط دون تشغيل الخادم وربط الصفحة بعنوانه. إذا كان الخادم في وضع السكون، حاول مجددًا بعد دقيقة.',
     sourceBlocked: 'يحظر الموقع المصدر مؤقتًا الطلبات القادمة من خادمنا. يرجى المحاولة لاحقًا أو تجربة رابط من موقع آخر.',
     clipboardUnavailable: 'لا يمكن الوصول إلى الحافظة. يمكنك لصق الرابط مباشرة في الحقل.',
     modeHeading: 'اختر طريقة التنزيل',
@@ -293,6 +293,14 @@ function announce(message) {
 function showFormMessage(messageKey, kind = 'error') {
   formMessage.dataset.messageKey = messageKey;
   formMessage.textContent = t(messageKey);
+  if (messageKey === 'backendUnavailable' && window.VAX_API_BASE) {
+    const endpoint = document.createElement('a');
+    endpoint.href = apiUrl('health');
+    endpoint.textContent = endpoint.href;
+    endpoint.target = '_blank';
+    endpoint.rel = 'noopener noreferrer';
+    formMessage.append(document.createElement('br'), endpoint);
+  }
   formMessage.dataset.kind = kind;
   formMessage.hidden = false;
 }
