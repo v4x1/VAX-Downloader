@@ -32,11 +32,15 @@ const STUB_SOURCE = `#!/usr/bin/env node
 const fs = require('node:fs');
 const path = require('node:path');
 const args = process.argv.slice(2);
-const joined = args.join(' ');
-const fallback = args.includes('--extractor-args') ? args[args.indexOf('--extractor-args') + 1] : '';
+// The server places operator-configured flags before \`--proxy\` and the walk's own client
+// strategies after it, so the label below reads only the walk arguments.
+const proxyIndex = args.indexOf('--proxy');
+const walkArgs = proxyIndex === -1 ? args : args.slice(proxyIndex + 2);
+const walkText = walkArgs.join(' ');
+const fallback = walkArgs.includes('--extractor-args') ? walkArgs[walkArgs.indexOf('--extractor-args') + 1] : '';
 const clients = (fallback.match(/player_client=([^;]+)/) || [])[1] || '';
-const label = joined.includes('formats=missing_pot') ? 'permissive'
-  : joined.includes('player_skip=webpage') ? 'api-only'
+const label = walkText.includes('formats=missing_pot') ? 'permissive'
+  : walkText.includes('player_skip=webpage') ? 'api-only'
   : clients ? 'players' : 'default';
 const scenario = process.env.STUB_SCENARIO || 'blocked';
 const outputIndex = args.indexOf('--output');
@@ -61,7 +65,8 @@ const succeed = (info) => {
 
 log('attempt:' + label);
 
-if (label === 'default' && scenario !== 'pot') {
+const silentScenarios = new Set(['pot', 'pot-quiet', 'drm']);
+if (label === 'default' && !silentScenarios.has(scenario)) {
   refuse("ERROR: [youtube] dQw4w9WgXcQ: Sign in to confirm you\\u2019re not a bot. " +
     'Use --cookies-from-browser or --cookies for the authentication.');
 }
@@ -75,13 +80,20 @@ if (label === 'api-only' && scenario === 'always-blocked') {
 if (label === 'permissive' && scenario === 'always-blocked') {
   refuse('ERROR: [youtube] dQw4w9WgXcQ: No video formats found!');
 }
-if (scenario === 'pot' && label === 'default') {
-  process.stderr.write('WARNING: [youtube] dQw4w9WgXcQ: web client https formats require a GVS PO Token ' +
-    'which was not provided. They will be skipped as they may yield HTTP Error 403.\\n');
+if (silentScenarios.has(scenario) && label === 'default') {
+  // Real yt-dlp answers a public video with only storyboards when every stream was withheld,
+  // and the server runs it with --quiet --no-warnings: the words that explain the withholding
+  // are debug output for the default clients and suppressed warnings for the rest. Only the
+  // 'pot' scenario echoes them; 'pot-quiet' and 'drm' stay silent the way production sees it.
+  if (scenario === 'pot') {
+    process.stderr.write('WARNING: [youtube] dQw4w9WgXcQ: web client https formats require a GVS PO Token ' +
+      'which was not provided. They will be skipped as they may yield HTTP Error 403.\\n');
+  }
   succeed({
     id: 'dQw4w9WgXcQ',
     title: 'Stub video',
     extractor: 'youtube',
+    _has_drm: scenario === 'drm' ? true : null,
     formats: [{ format_id: 'sb0', ext: 'mhtml', vcodec: 'none', acodec: 'none' }],
   });
 }
@@ -256,6 +268,45 @@ test('retries when the answer describes a video but withholds every stream', asy
   const info = await analyzeUrl(YOUTUBE_URL, { timeoutMs: 60_000 });
   assert.equal(info.formats.some((format) => format.vcodec === 'avc1'), true);
   assert.deepEqual(stub.attempts(), ['default', 'players']);
+});
+
+test('walks the strategies even when the withholding leaves no words on stderr', async (t) => {
+  const stub = withStub({ scenario: 'pot-quiet' });
+  t.after(stub.cleanup);
+
+  // Production is the quiet case: yt-dlp runs with --quiet --no-warnings, and the reasons a
+  // stream was withheld are debug output for the default clients. The answer alone — a video
+  // described with nothing to play — has to start the walk, or every YouTube link on a
+  // data-center address ends in an error while the strategy list sits unused.
+  const info = await analyzeUrl(YOUTUBE_URL, { timeoutMs: 60_000 });
+  assert.equal(info.formats.some((format) => format.vcodec === 'avc1'), true);
+  assert.deepEqual(stub.attempts(), ['default', 'players']);
+});
+
+test('reports a DRM-protected answer as private instead of a wall', async (t) => {
+  const stub = withStub({ scenario: 'drm' });
+  t.after(stub.cleanup);
+
+  // A description that admits its formats are DRM-protected is not a refusal of this server:
+  // every client answers the same way, so the walk must not spend the visitor's time on it.
+  await assert.rejects(() => analyzeUrl(YOUTUBE_URL, { timeoutMs: 60_000 }), (error) => {
+    assert.equal(error.code, 'private_content');
+    return true;
+  });
+  assert.deepEqual(stub.attempts(), ['default']);
+});
+
+test('an operator who configured extractor args has chosen the clients already', async (t) => {
+  const stub = withStub({ scenario: 'blocked' });
+  t.after(stub.cleanup);
+
+  process.env.YTDLP_EXTRACTOR_ARGS = 'youtube:player_client=tv';
+  await assert.rejects(() => analyzeUrl(YOUTUBE_URL, { timeoutMs: 60_000 }), (error) => {
+    assert.equal(error.code, 'source_blocked');
+    return true;
+  });
+  // The wall is reported, but the automatic walk stays out of the way of the chosen clients.
+  assert.deepEqual(stub.attempts(), ['default']);
 });
 
 test('reuses the strategy that worked for a later request for the same link', async (t) => {
