@@ -42,6 +42,17 @@ test('offers audio conversions only when the source has audio and estimates outp
   assert.deepEqual(normalizeAudioFormats(sourceFormats.slice(0, 2), 60), []);
 });
 
+test('X progressive MP4 with unknown codecs can offer audio, but explicit silent tracks cannot', () => {
+  const progressive = { format_id: 'http-832', ext: 'mp4', height: 720, tbr: 832 };
+  const info = { extractor_key: 'Twitter', formats: [progressive], duration: 30 };
+  const media = createPublicMetadata(info, 'https://x.com/example/status/123');
+  assert.equal(media.audioFormats.some((option) => option.format === 'mp3'), true);
+  assert.equal(availableSelection(media, { type: 'audio', format: 'mp3', quality: 192 }), true);
+  assert.deepEqual(normalizeAudioFormats([progressive], 30), []);
+  assert.deepEqual(normalizeAudioFormats([{ ...progressive, acodec: 'none' }], 30, 'twitter'), []);
+  assert.deepEqual(normalizeAudioFormats([{ format_id: 'hls-720', ext: 'mp4', height: 720 }], 30, 'twitter'), []);
+});
+
 test('validates a download selection against normalized source availability', () => {
   const metadata = createPublicMetadata({ formats: sourceFormats, title: 'A video', duration: 40 }, 'https://example.com/watch');
   assert.equal(availableSelection(metadata, { type: 'video', format: 'mp4', quality: 1080 }), true);
