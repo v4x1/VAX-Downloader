@@ -138,7 +138,6 @@ const translations = {
     doneAnnouncement: 'اكتمل التنزيل.',
     unknownCreator: 'ناشر غير معروف',
     untitledMedia: 'وسائط بلا عنوان',
-    mediaFile: 'ملف وسائط',
     unavailableDuration: 'المدة غير متاحة',
     unavailableSize: 'الحجم متغير',
     approximate: 'تقريبًا',
@@ -566,10 +565,21 @@ function platformMark(media) {
   return platformMarks[media.platformKey] || '▶';
 }
 
+// Nodes each result card exposes for in-place video/audio updates, keyed by the card element.
+const cardModeTargets = new WeakMap();
+
 function showMode(mode) {
+  if (mode === state.currentMode) return;
   state.currentMode = mode;
-  if (!state.currentMedia) return;
-  renderCurrentResult();
+  // Rewrite only the mode-dependent parts of the card that is already on screen. Rebuilding the
+  // whole card here would replay its entrance animation and refetch the thumbnail for no reason.
+  const card = resultContainer.firstElementChild;
+  if (state.currentMedia && card instanceof HTMLElement && cardModeTargets.has(card)
+    && card.dataset.resultSerial === String(state.resultSerial)) {
+    updateResultCardMode(card);
+  } else {
+    renderCurrentResult();
+  }
   announce(mode === 'video' ? t('availableVideo') : t('availableAudio'));
 }
 
@@ -642,30 +652,51 @@ function buildResultCard(media) {
 
   const heading = makeElement('div', 'download-heading');
   const headingCopy = makeElement('div');
-  const formats = state.currentMode === 'video' ? media.videoFormats : media.audioFormats;
-  const titleText = t(state.currentMode === 'video' ? 'availableVideo' : 'availableAudio');
-  headingCopy.append(
-    makeElement('h3', '', titleText),
-    makeElement('p', '', t(state.currentMode === 'video' ? 'chooseVideo' : 'chooseAudio')),
-  );
-  const count = makeElement('span', 'format-count', `${localNumber(formats.length)} ${t(formats.length === 1 ? 'option' : 'options')}`);
+  const count = makeElement('span', 'format-count');
   heading.append(headingCopy, count);
 
   const list = makeElement('div', 'download-list');
-  list.setAttribute('aria-label', titleText);
-  if (formats.length) {
-    formats.forEach((option, index) => {
-      list.append(state.currentMode === 'video' ? buildVideoRow(option, index) : buildAudioRow(option, index));
-    });
-  } else {
-    list.append(makeElement('div', 'empty-formats', t(state.currentMode === 'video' ? 'noVideoFormats' : 'noAudioFormats')));
-  }
-  if (!media.videoFormats.length && !media.audioFormats.length) {
-    list.replaceChildren(makeElement('div', 'empty-formats', t('noFormats')));
-  }
+
+  // Keep references to everything the video/audio toggle rewrites, so switching modes reloads
+  // just the options instead of rebuilding the thumbnail, title, and switch as well.
+  card.dataset.resultSerial = String(state.resultSerial);
+  cardModeTargets.set(card, { modeDescription, modeSwitch, headingCopy, count, list });
+  updateResultCardMode(card);
 
   card.append(summary, modeRow, heading, list);
   return card;
+}
+
+function formatRowsFor(media) {
+  const video = state.currentMode === 'video';
+  const formats = video ? media.videoFormats : media.audioFormats;
+  if (!media.videoFormats.length && !media.audioFormats.length) {
+    return { formats, rows: [makeElement('div', 'empty-formats', t('noFormats'))] };
+  }
+  if (!formats.length) {
+    return { formats, rows: [makeElement('div', 'empty-formats', t(video ? 'noVideoFormats' : 'noAudioFormats'))] };
+  }
+  return { formats, rows: formats.map((option, index) => (video ? buildVideoRow(option, index) : buildAudioRow(option, index))) };
+}
+
+function updateResultCardMode(card) {
+  const targets = cardModeTargets.get(card);
+  const media = state.currentMedia;
+  if (!targets || !media) return;
+  const video = state.currentMode === 'video';
+  const { formats, rows } = formatRowsFor(media);
+  const titleText = t(video ? 'availableVideo' : 'availableAudio');
+
+  targets.modeDescription.textContent = t(video ? 'modeVideoDescription' : 'modeAudioDescription');
+  targets.modeSwitch.setAttribute('aria-checked', String(state.currentMode === 'audio'));
+  targets.modeSwitch.setAttribute('aria-label', t(video ? 'switchToAudio' : 'switchToVideo'));
+  targets.headingCopy.replaceChildren(
+    makeElement('h3', '', titleText),
+    makeElement('p', '', t(video ? 'chooseVideo' : 'chooseAudio')),
+  );
+  targets.count.textContent = `${localNumber(formats.length)} ${t(formats.length === 1 ? 'option' : 'options')}`;
+  targets.list.setAttribute('aria-label', titleText);
+  targets.list.replaceChildren(...rows);
 }
 
 function getDownloadId(type, option) {
@@ -793,57 +824,36 @@ function clientFilename(title, extension) {
 
 const mimeByFormat = { mp4: 'video/mp4', webm: 'video/webm', mp3: 'audio/mpeg', wav: 'audio/wav', m4a: 'audio/mp4' };
 
-async function chooseSaveTarget(filename, extension) {
-  if (typeof window.showSaveFilePicker !== 'function' || !window.isSecureContext) return null;
-  try {
-    const mime = mimeByFormat[extension] || 'application/octet-stream';
-    return await window.showSaveFilePicker({
-      suggestedName: filename,
-      types: [{ description: t('mediaFile'), accept: { [mime]: [`.${extension}`] } }],
-    });
-  } catch (error) {
-    if (error?.name === 'AbortError') throw error;
-    // Browsers may expose the API without permitting this file type; fall back to a Blob download.
-    return null;
-  }
-}
-
-async function readResponse(response, saveTarget, filename, mime, id, type, option, signal) {
+async function readResponse(response, filename, mime, id, signal) {
   const total = Number(response.headers.get('content-length')) || 0;
   const reader = response.body?.getReader();
   if (!reader) throw new Error('download_failed');
-  let writer = null;
   const chunks = [];
   let received = 0;
-  if (saveTarget) writer = await saveTarget.createWritable();
   try {
     while (true) {
       if (signal.aborted) throw new DOMException('The download was cancelled.', 'AbortError');
       const { done, value } = await reader.read();
       if (done) break;
       received += value.byteLength;
-      if (writer) await writer.write(value);
-      else chunks.push(value);
+      chunks.push(value);
       const progress = total > 0 ? Math.min(100, (received / total) * 100) : 0;
       setDownloadState(id, { state: 'downloading', progress, indeterminate: total <= 0 });
     }
-    if (writer) {
-      await writer.close();
-    } else {
-      const blob = new Blob(chunks, { type: mime });
-      const objectUrl = URL.createObjectURL(blob);
-      const anchor = document.createElement('a');
-      anchor.href = objectUrl;
-      anchor.download = filename;
-      anchor.hidden = true;
-      document.body.append(anchor);
-      anchor.click();
-      anchor.remove();
-      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
-    }
-  } catch (error) {
-    if (writer) await writer.abort().catch(() => {});
-    throw error;
+    // Hand the finished file to the browser's own download manager. Writing it out with the
+    // File System Access API instead would bypass Chrome's downloads bar entirely, and the
+    // download attribute keeps the filename the server chose.
+    const blob = new Blob(chunks, { type: mime });
+    const objectUrl = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = objectUrl;
+    anchor.download = filename;
+    anchor.hidden = true;
+    document.body.append(anchor);
+    anchor.click();
+    anchor.remove();
+    // Keep the object URL alive long enough for the browser to start reading the file.
+    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
   } finally {
     reader.releaseLock();
   }
@@ -861,9 +871,6 @@ async function startDownload(button, id, type, option) {
   const controller = new AbortController();
   let timeout;
   try {
-    // Request a user-selected save location before starting network work when supported.
-    const saveTarget = await chooseSaveTarget(filename, extension);
-    setDownloadState(id, { state: 'preparing', progress: 0, indeterminate: true });
     const url = new URL(apiUrl('download'));
     url.searchParams.set('url', requestedUrl);
     url.searchParams.set('type', type);
@@ -877,7 +884,7 @@ async function startDownload(button, id, type, option) {
     }
 
     setDownloadState(id, { state: 'downloading', progress: 0, indeterminate: !response.headers.get('content-length') });
-    await readResponse(response, saveTarget, filename, mimeByFormat[extension] || 'application/octet-stream', id, type, option, controller.signal);
+    await readResponse(response, filename, mimeByFormat[extension] || 'application/octet-stream', id, controller.signal);
     setDownloadState(id, { state: 'done', progress: 100, indeterminate: false });
     announce(t('doneAnnouncement'));
     window.setTimeout(() => {
