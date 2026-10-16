@@ -111,7 +111,20 @@ Never enable wildcard CORS for this API.
 
 ### YouTube on cloud servers
 
-YouTube often answers requests from data-center IP addresses, including free hosting plans, with a "confirm you're not a bot" check. The page then reports that the source site is blocking the server. Other sites are usually unaffected. A server on a home (residential) connection is the most reliable option for YouTube.
+YouTube answers requests from data-center IP addresses, including free hosting plans, with a "confirm you're not a bot" check, and the page reports that the source site is blocking the server. Other sites are usually unaffected. Nothing in this repository can fully hide a server's address, so a server on a home (residential) connection remains the most reliable option for YouTube.
+
+The server already does what it can from code: every YouTube link that YouTube refuses is retried once with alternate player clients (`tv_downgraded`, `web_embedded`, `web_safari`, `android`, `ios`), which are the clients least likely to demand a proof-of-origin token. When that is not enough, work through the following in order — each step is a configuration change, not a code change.
+
+1. **Update yt-dlp.** YouTube changes its checks weekly and yt-dlp ships workarounds within days. Rebuild the image (`docker build --no-cache …`) or run `yt-dlp -U`; distro packages are often too old to work at all. Check the version with `yt-dlp --version`.
+2. **Confirm the JavaScript runtime.** Current yt-dlp needs Deno to solve YouTube's challenges, and without it only a reduced client set is used. Install with `pip install "yt-dlp[default,deno]"` (the Dockerfile already does) and look for the runtime line in `yt-dlp -v` output. `YTDLP_DEBUG=1` in the server environment logs yt-dlp's last error lines, which is the fastest way to tell a bot wall from a missing tool.
+3. **Choose player clients.** YouTube scores each client separately, so a different list can succeed where the defaults are refused. Set `YTDLP_EXTRACTOR_ARGS=youtube:player_client=tv_downgraded,web_embedded` (comma-separated, no spaces needed). If the watch page itself is refused but the player API is not, add `player_skip=webpage`:
+   `YTDLP_EXTRACTOR_ARGS=youtube:player_client=tv_downgraded;player_skip=webpage`.
+   Setting this variable disables the automatic retry, so list every client you want to try.
+4. **Slow down.** A burst of requests is the fastest way to turn a temporary challenge into a longer block. Set `YTDLP_SLEEP_REQUESTS=2` and, for downloads, `YTDLP_LIMIT_RATE=2M`.
+5. **Use cookies, carefully.** Export a `cookies.txt` from a *throwaway* YouTube account in a private window (close the window without logging out) and point `YTDLP_COOKIES` at it. The file must be readable by the server's user — bake it into the image or mount it as a secret. Never use a personal account: sessions used by downloaders get flagged, and pairing cookies with the `tv` client tends to log the account out.
+6. **Add a PO-token provider.** When the debug output says formats require a proof-of-origin token, install a provider plugin (for example `bgutil-ytdlp-pot-provider`) in the yt-dlp environment and load it with `YTDLP_PLUGIN_DIRS=default`.
+7. **Change the address.** If a laptop on a home connection downloads the same video without cookies, the server's IP is the problem and no flag will fix it. Route yt-dlp through a residential proxy, or run the server somewhere with a cleaner address. Rotating cheap data-center proxies rarely helps — they are scored just like the current host.
+
 
 ## API
 
@@ -155,7 +168,7 @@ Query parameters: `url`, `type=video|audio`, `format`, and `quality` (video heig
 
 - Only `http` and `https` source URLs on public hosts and standard web ports are accepted. Credentials, private/loopback/link-local IPs, localhost names, and special-use address ranges are rejected.
 - yt-dlp and FFmpeg traffic is routed through a loopback-only outbound proxy. The proxy validates and pins resolved public IP addresses for each HTTP request and HTTPS tunnel, including redirects and media segments.
-- yt-dlp runs without user/system config, cookies, or authentication options. YouTube's JavaScript challenges are solved by Deno, which yt-dlp runs without file system or network access. There are request-size limits, per-route rate limits, child-process timeouts, a concurrent-download cap, and a configurable file-size cap.
+- yt-dlp runs without user/system config, and without cookies or authentication options unless the operator configures them (see [YouTube on cloud servers](#youtube-on-cloud-servers)). YouTube's JavaScript challenges are solved by Deno, which yt-dlp runs without file system or network access. There are request-size limits, per-route rate limits, child-process timeouts, a concurrent-download cap, and a configurable file-size cap.
 - Use HTTPS and a trusted reverse proxy in production. Set `TRUST_PROXY` only when the service is actually behind the configured proxy. The included in-memory rate limiter is per process; use a shared rate-limit store when horizontally scaling.
 - Keep yt-dlp and FFmpeg updated. For sensitive deployments, add infrastructure-level outbound firewall rules as defense in depth and monitor temp-disk usage.
 - Respect each source site's terms and copyright law. Private, paywalled, and DRM-protected content is not supported.

@@ -98,6 +98,8 @@ test('reports anti-bot and rate-limit blocks separately from genuinely private m
     'ERROR: [youtube] abc: Video unavailable. YouTube is requiring a captcha challenge before playback',
     "ERROR: [youtube] abc: This content isn't available, try again later. The current session has been rate-limited by YouTube for up to an hour.",
     'ERROR: [instagram] abc: Unable to download webpage: HTTP Error 429: Too Many Requests',
+    // Current yt-dlp builds word a refused server address this way.
+    'ERROR: [youtube] abc: All player responses are invalid. Your IP is likely being blocked by Youtube',
   ];
   for (const message of blocked) assert.equal(classifyExtractorError(message), 'source_blocked', message);
 
