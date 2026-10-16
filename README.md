@@ -113,11 +113,19 @@ Never enable wildcard CORS for this API.
 
 YouTube answers requests from data-center IP addresses, including free hosting plans, with a "confirm you're not a bot" check, and the page reports that the source site is blocking the server. Other sites are usually unaffected. Nothing in this repository can fully hide a server's address, so a server on a home (residential) connection remains the most reliable option for YouTube.
 
-The server already does what it can from code: every YouTube link that YouTube refuses is retried once with alternate player clients (`tv_downgraded`, `web_embedded`, `web_safari`, `android`, `ios`), which are the clients least likely to demand a proof-of-origin token. When that is not enough, work through the following in order — each step is a configuration change, not a code change.
+The server already does what it can from code. Every YouTube link that YouTube refuses is retried in order with:
 
-1. **Update yt-dlp.** YouTube changes its checks weekly and yt-dlp ships workarounds within days. Rebuild the image (`docker build --no-cache …`) or run `yt-dlp -U`; distro packages are often too old to work at all. Check the version with `yt-dlp --version`.
+1. the two clients YouTube challenges least and that need no proof-of-origin (PO) token at all — `player_client=web_embedded,tv_downgraded`, so the streams they return download unchanged;
+2. the player API without the watch page, keeping `visionos`, the only client that needs neither a PO token nor a JavaScript runtime — `player_client=visionos,tv,web_embedded;player_skip=webpage`;
+3. the streams YouTube withholds without a token, accepted rather than skipped — `formats=missing_pot`. They may answer 403 when downloaded, so this is the last thing tried rather than the first, and a link that offers formats is worth more than an error.
+
+An extraction that returns only storyboards counts as a refusal too: yt-dlp exits successfully in that case, so the server inspects the answer and keeps walking instead of showing an empty result. Once a client list answers, it is reused for the download of the same link, so the visitor downloads from the client whose format list they were shown. `YTDLP_YOUTUBE_STRATEGIES` replaces the list (`|`-separated `youtube:` values), `YTDLP_YOUTUBE_CLIENTS` replaces it with one retry that uses exactly those clients, and `off` disables the retries.
+
+When that is not enough, work through the following in order — each step is a configuration change, not a code change.
+
+1. **Update yt-dlp.** YouTube changes its checks weekly and yt-dlp ships workarounds within days, so this is the first thing to rule out. The server prints the build it runs at startup (`[VAX] yt-dlp 2026.08.19`). To replace it, bump `YTDLP_BUILD` in the `Dockerfile` (which invalidates the cached install layer) or rebuild with `docker build --no-cache …`; distro packages are often too old to work at all.
 2. **Confirm the JavaScript runtime.** Current yt-dlp needs Deno to solve YouTube's challenges, and without it only a reduced client set is used. Install with `pip install "yt-dlp[default,deno]"` (the Dockerfile already does) and look for the runtime line in `yt-dlp -v` output. `YTDLP_DEBUG=1` in the server environment logs yt-dlp's last error lines, which is the fastest way to tell a bot wall from a missing tool.
-3. **Choose player clients.** YouTube scores each client separately, so a different list can succeed where the defaults are refused. Set `YTDLP_EXTRACTOR_ARGS=youtube:player_client=tv_downgraded,web_embedded` (comma-separated, no spaces needed). If the watch page itself is refused but the player API is not, add `player_skip=webpage`:
+3. **Choose player clients yourself.** YouTube scores each client separately, so a different list can succeed where the automatic ones are refused. Set `YTDLP_EXTRACTOR_ARGS=youtube:player_client=tv_downgraded,web_embedded` (comma-separated, no spaces needed). If the watch page itself is refused but the player API is not, add `player_skip=webpage`:
    `YTDLP_EXTRACTOR_ARGS=youtube:player_client=tv_downgraded;player_skip=webpage`.
    Setting this variable disables the automatic retry, so list every client you want to try.
 4. **Slow down.** A burst of requests is the fastest way to turn a temporary challenge into a longer block. Set `YTDLP_SLEEP_REQUESTS=2` and, for downloads, `YTDLP_LIMIT_RATE=2M`.

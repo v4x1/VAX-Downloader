@@ -25,6 +25,7 @@ const {
   mediaMime,
   safeFilename,
   stopMediaProcesses,
+  ytDlpVersion,
 } = require('./lib/media');
 
 const app = express();
@@ -258,6 +259,11 @@ app.use((error, request, response, _next) => {
 
 const server = app.listen(port, '0.0.0.0', () => {
   console.log(`VAX Downloader listening on 0.0.0.0:${port}`);
+  // A yt-dlp build that has fallen behind is the first thing to rule out when a source that
+  // used to work starts refusing the server, so the startup log names the build in use.
+  ytDlpVersion()
+    .then((version) => console.log(`[VAX] yt-dlp ${version}`))
+    .catch(() => console.warn('[VAX] yt-dlp is not runnable; media analysis will fail. Check YTDLP_BIN and PATH.'));
 });
 server.headersTimeout = 15_000;
 server.requestTimeout = 30_000;
